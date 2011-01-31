@@ -21,10 +21,12 @@
     <!-- Simple strings. -->
     <string name="app_name">SimpleScan App</string>
     <string name="scan1">Scan</string>
-    <string name="clear">Clear</string>
+    <string name="export">Export</string>
 
     <!-- This is a complex string containing style runs. -->
     <string name="main_label">Hello <u>th<ignore>e</ignore>re</u>, <i>you</i> <b>Activity</b>!</string>
 <string name="quit">Exit</string>
+<string name="clear">Clear</string>
+<string name="store">Store</string>
 </resources>
 
