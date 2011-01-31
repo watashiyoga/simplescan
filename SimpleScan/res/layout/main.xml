@@ -69,7 +69,7 @@
 			android:background="@drawable/semi_black">
 
 			<Button android:layout_width="fill_parent"
-				android:layout_height="wrap_content" android:text="Save" android:id="@+id/btnSave"
+				android:layout_height="wrap_content" android:text="@@string/store" android:id="@+id/store"
 				android:textColor="@color/black" android:layout_weight="1"/>
 			<Button android:layout_width="fill_parent" android:id="@+id/clear"
 				style="@style/ActionButton" android:text="@string/clear"
