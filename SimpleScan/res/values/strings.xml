@@ -28,5 +28,10 @@
 <string name="quit">Exit</string>
 <string name="clear">Clear</string>
 <string name="store">Store</string>
+
+    <string name="manufact_prompt">Choose a manufacturer</string>
+    <string name="model_prompt">Choose a model</string>
+
+
 </resources>
 
