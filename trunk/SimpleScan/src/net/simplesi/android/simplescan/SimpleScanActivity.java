@@ -1,8 +1,11 @@
 /* SimpleScan
  * Changelog
- * V0.2 31Jan2011 
  * Store records in SQLLite database and add export to XML menu option
  * 
+ * V0.21 04Feb2011 Added ability for spinner for manufacturer
+ * V0.22 05Feb2011 Change to using ArrayList for manufacturer instead of plain array
+ * V0.3  06Feb2011 Use arraylist for model num and link to manufact
+ *   
  * Copyright (C) 2011 Simon Walters
  * 
  *
@@ -21,18 +24,31 @@
 
 package net.simplesi.android.simplescan;
 
-
 import java.io.BufferedWriter;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
+import java.io.InputStream;
 
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.FactoryConfigurationError;
+import javax.xml.parsers.ParserConfigurationException;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 //import com.example.android.skeletonapp.R;
 
@@ -57,10 +73,15 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener; //import android.widget.Button;
 //import android.widget.EditText;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.Spinner;
 import android.widget.Toast;
+import android.widget.AdapterView.OnItemSelectedListener;
 
 /**
  * This class provides a basic demonstration of how to write an Android
@@ -82,6 +103,14 @@ public class SimpleScanActivity extends Activity {
 	private DatabaseHelper mOpenHelper;
 	private static final String DATABASE_NAME = "simplescan.db";
 	private static final int DATABASE_VERSION = 1;
+	private static final String MANENTRY = "[Manual Entry]";
+	private static ArrayList<String> manufactNamesList = new ArrayList<String>();
+	private static ArrayAdapter<String> manufactArrayAdapter;
+	private static Spinner manufactSpinner;
+	
+	private static ArrayList<String> modelNamesList = new ArrayList<String>();
+	private static ArrayAdapter<String> modelArrayAdapter;
+	private static Spinner modelSpinner;
 
 	// static private FrameLayout contentPane;
 
@@ -89,9 +118,10 @@ public class SimpleScanActivity extends Activity {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-
+		debug("CREATE OCCURRED---------------------------------------------------------");
 		// Inflate our UI from its XML layout description.
 		setContentView(R.layout.main);
+
 		// contentPane = (FrameLayout)findViewById(R.id.contentPane);
 
 		// Find the text editor view inside the layout, because we
@@ -99,13 +129,54 @@ public class SimpleScanActivity extends Activity {
 
 		eSerialNum = (EditText) findViewById(R.id.serialNum);
 		eModelNum = (EditText) findViewById(R.id.modelNum);
+
 		eManufact = (EditText) findViewById(R.id.manufact);
 		eDescription = (EditText) findViewById(R.id.description);
+		
+		//set up manufacturer spinner
+		loadManufact(); // loads manufactNames array with values from XML file
+		
 
-		// Hook up button presses to the appropriate event handler.
+		manufactSpinner = (Spinner) findViewById(R.id.spinner);
+	    manufactArrayAdapter = new ArrayAdapter(this, android.R.layout.simple_spinner_item);
+	    manufactArrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+	    manufactSpinner.setAdapter(manufactArrayAdapter);
+	    manufactSpinner.setOnItemSelectedListener(new manufactItemSelectedListener());
+	    manufactArrayAdapter.clear();
+		for (int i = 0; i < (manufactNamesList.size()); i++) {
+			debug("loop list: "+i);
+			debug("nameString: "+ manufactNamesList.get(i));
+			manufactArrayAdapter.add(manufactNamesList.get(i));
+
+		}
+		
+		// end manufact
+		
+		//set up model type
+		loadModel(); // loads manufactNames array with values from XML file
+
+		modelSpinner = (Spinner) findViewById(R.id.modelSpinner);
+	    modelArrayAdapter = new ArrayAdapter(this, android.R.layout.simple_spinner_item);
+	    modelArrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+	    modelSpinner.setAdapter(modelArrayAdapter);
+	    modelSpinner.setOnItemSelectedListener(new modelItemSelectedListener());
+	    modelArrayAdapter.clear();
+		for (int i = 0; i < (modelNamesList.size()); i++) {
+			debug("loop list: "+i);
+			debug("nameString: "+ modelNamesList.get(i));
+			modelArrayAdapter.add(getCSVField(modelNamesList.get(i),1));
+
+		}
+		
+		// end model
+		
+		
+		
+		
 		((Button) findViewById(R.id.scan)).setOnClickListener(mScanListener);
 		((Button) findViewById(R.id.clear)).setOnClickListener(mClearListener);
 		((Button) findViewById(R.id.store)).setOnClickListener(mStoreListener);
+		
 
 		mOpenHelper = new DatabaseHelper(getBaseContext());
 
@@ -115,8 +186,27 @@ public class SimpleScanActivity extends Activity {
 	 * Called when the activity is about to start interacting with the user.
 	 */
 	@Override
+	
+	protected void onPause() {
+		super.onPause();
+		debug("PAUSE OCCURRED---------------------------------------------------------");
+
+	}
 	protected void onResume() {
 		super.onResume();
+		debug("RESUME OCCURRED---------------------------------------------------------");
+
+	}
+	
+	protected void onStop() {
+		super.onStop();
+		debug("STOP OCCURRED---------------------------------------------------------");
+
+	}
+	protected void onDestroy() {
+		super.onDestroy();
+		debug("DESTROY OCCURRED---------------------------------------------------------");
+
 	}
 
 	/**
@@ -207,8 +297,7 @@ public class SimpleScanActivity extends Activity {
 		public void onClick(View v) {
 
 			Intent intent = new Intent("com.google.zxing.client.android.SCAN");
-			intent.putExtra("com.google.zxing.client.android.SCAN.SCAN_MODE",
-					"QR_CODE_MODE");
+			intent.putExtra("com.google.zxing.client.android.SCAN.SCAN_MODE","ONE_D_MODE");
 			startActivityForResult(intent, 0);
 		}
 	};
@@ -238,7 +327,7 @@ public class SimpleScanActivity extends Activity {
 	 */
 	OnClickListener mStoreListener = new OnClickListener() {
 		public void onClick(View v) {
-			saveFile(0);
+			storeItem(0);
 		}
 	};
 
@@ -269,7 +358,7 @@ public class SimpleScanActivity extends Activity {
 		return dialog;
 	}
 
-	public void saveFile(int whichButton) {
+	public void storeItem(int whichButton) {
 
 		SQLiteDatabase db = mOpenHelper.getWritableDatabase();
 		ContentValues values;
@@ -288,6 +377,10 @@ public class SimpleScanActivity extends Activity {
 		} catch (Exception e) {
 			debug("Sql insert error");
 		}
+		db.close();
+		
+		addManufact(eManufact.getText().toString());
+		addModel(eModelNum.getText().toString());
 		/*
 		File dir = new File("/sdcard/simplescan/");
 		if (!dir.exists()) {
@@ -439,8 +532,323 @@ public class SimpleScanActivity extends Activity {
 				debug("Exception: " + e.getMessage());
 			}
 		}
+		db.close();
 	}
 	
+    public void loadManufact() {
+		InputStream in;
+		DocumentBuilder builder;
+		
+		try {
+			File testForFile = new File("/sdcard/simplescan/config/manufacturers.xml");
+			if (!testForFile.exists()) {
+				debug("manufact file does not exist");
+//				String[] manufactNamesInit = new String[] {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
+//				manufactNames = (String[]) resizeArray(manufactNames,manufactNamesInit.length);
+//				manufactNames = manufactNamesInit;
+				manufactNamesList.clear();
+				String[] initManufact = {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
+				for (int i = 0; i < (initManufact.length); i++) {
+					manufactNamesList.add(initManufact[i]);
+				}
+				saveManufact();
+				return;
+			}
+			manufactNamesList.clear();
+			String filename = "/sdcard/simplescan/config/manufacturers.xml";
+			in = new FileInputStream(filename);
+			debug("File opened: " + filename);
+			builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+			debug("Document builder ok.");
+			Document doc=builder.parse(in, null);
+			debug("XML parse ok.");
+			NodeList manufactNameNodeList = doc.getElementsByTagName("Name");
+			int numOfNodes = manufactNameNodeList.getLength();
+			debug ("Num of nodes: "+ numOfNodes);
+//			manufactNames = (String[]) resizeArray(manufactNames,1+numOfNodes);
+			manufactNamesList.add(MANENTRY);
+
+			for (int i = 0; i < (numOfNodes); i++) {
+				debug("loop : "+i);
+//				csv = placemarks.item(i).getFirstChild().getNodeValue();
+//
+   				String manufactNameString = manufactNameNodeList.item(i).getFirstChild().getNodeValue();
+					
+				debug("nameString: "+ manufactNameString);
+//				manufactNames[i+1] = manufactNameString;
+				manufactNamesList.add(manufactNameString);
+
+			}
+//			manufactNames[0] = MANENTRY;
+
+
+		} catch (Exception e) {
+			debug("exception thrown"+ e.getMessage());
+		}
+   }
+    
+	public void saveManufact() {
+		debug("SaveMaufact====================================================");
+		File dir = new File("/sdcard/simplescan/config/");
+		if (!dir.exists()) {
+			dir.mkdirs();
+		}
+		File XMLfile = new File("/sdcard/simplescan/config/manufacturers.xml");
+		FileOutputStream XMLout;
+		DataOutputStream XMLdout = null;
+		try {
+			XMLout = new FileOutputStream(XMLfile);
+			XMLdout = new DataOutputStream(XMLout);
+			debug("Manufacturers data output stream created.");
+			XMLdout.writeBytes("<?xml version='1.0' encoding='UTF-8'?>\n");
+			XMLdout.writeBytes("<Manufacturers>\n");
+		} catch (FileNotFoundException e) {
+			debug("Exeption: " + e.getMessage());
+			Toast.makeText(SimpleScanActivity.this, "Failed to save file",
+					Toast.LENGTH_LONG).show();
+			return;
+		} catch (IOException e) {
+			debug("Count not write XML header.");
+		}
+
+		StringBuffer s = new StringBuffer();
+		for (int i = 1; i < manufactNamesList.size(); i++) {
+			s.append("\t<Name>" + manufactNamesList.get(i) + "</Name>\n");
+			debug("Write: "+ manufactNamesList.get(i) +" to XML File");
+			try {
+				XMLdout.writeBytes(s.toString());
+			} catch (IOException e) {
+				// e.printStackTrace();
+				debug("Exception: " + e.getMessage());
+				Toast.makeText(SimpleScanActivity.this,
+						"Failed to write in the file", Toast.LENGTH_LONG)
+						.show();
+				return;
+			}
+			s.setLength(0);
+		}
+		try {
+			XMLdout.writeBytes("</Manufacturers>");
+		} catch (IOException e) {
+			debug("Exception: " + e.getMessage());
+		}
+	}
+
+
+	public class manufactItemSelectedListener implements OnItemSelectedListener {
+
+		public void onItemSelected(AdapterView<?> parent, View view, int pos,
+				long id) {
+			String manufactItem = parent.getItemAtPosition(pos).toString();
+			if (!manufactItem.equals(MANENTRY)) {
+				eManufact.setText(manufactItem);
+			    modelArrayAdapter.clear();
+			    modelArrayAdapter.add(MANENTRY);
+				for (int i = 0; i < (modelNamesList.size()); i++) {
+					debug("loop list: "+i);
+					debug("nameString: "+ modelNamesList.get(i));
+					if (manufactItem.equals(getCSVField(modelNamesList.get(i),0))) {
+						modelArrayAdapter.add(getCSVField(modelNamesList.get(i),1));
+					}
+				}
+
+				modelSpinner.setSelection(0);
+//				eModelNum.setText("");
+			}
+			// Toast.makeText(parent.getContext(), "The planet is " +
+			// parent.getItemAtPosition(pos).toString(),
+			// Toast.LENGTH_LONG).show();
+		}
+
+        public void onNothingSelected(AdapterView parent) {
+          // Do nothing.
+        }
+    }
+    
+    public void addManufact(String newManufact) {
+    	boolean found = false;
+		for (int i = 0; i < manufactNamesList.size(); i++) {
+			debug("loop : "+i);
+//			csv = placemarks.item(i).getFirstChild().getNodeValue();
+//		
+			if (newManufact.equals(manufactNamesList.get(i))) {
+				found = true;
+			}
+				
+		}
+		if (!found) {
+			debug("Adding new: "+ newManufact);
+			manufactNamesList.add(newManufact);
+			manufactArrayAdapter.add(newManufact);
+			Toast.makeText(getApplicationContext(), newManufact + " has been added to the list of manufacturers", Toast.LENGTH_LONG).show();
+			saveManufact();
+		}
+		
+
+    	
+    }
+    
+    public void loadModel() {
+		InputStream in;
+		DocumentBuilder builder;
+		
+		try {
+			File testForFile = new File("/sdcard/simplescan/config/models.xml");
+			if (!testForFile.exists()) {
+				debug("model file does not exist");
+//				String[] manufactNamesInit = new String[] {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
+//				manufactNames = (String[]) resizeArray(manufactNames,manufactNamesInit.length);
+//				manufactNames = manufactNamesInit;
+				modelNamesList.clear();
+				String[] initModel = {"None,"+MANENTRY,"Epson,EMP-S3","ASUS,EEPC 701","ASUS,1001"};
+				for (int i = 0; i < (initModel.length); i++) {
+					modelNamesList.add(initModel[i]);
+				}
+				saveModel();
+				return;
+			}
+
+			modelNamesList.clear();
+			String filename = "/sdcard/simplescan/config/models.xml";
+			in = new FileInputStream(filename);
+			debug("File opened: " + filename);
+			builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+			debug("Document builder ok.");
+			Document doc=builder.parse(in, null);
+			debug("XML parse ok.");
+			NodeList modelItemNodeList = doc.getElementsByTagName("Item");
+			int numOfNodes = modelItemNodeList.getLength();
+			debug ("Num of nodes: "+ numOfNodes);
+//			manufactNames = (String[]) resizeArray(manufactNames,1+numOfNodes);
+			modelNamesList.add("None,"+MANENTRY);
+
+			for (int i = 0; i < (numOfNodes); i++) {
+				debug("loop : "+i);
+                Node modelItemNode = modelItemNodeList.item(i);
+                if(modelItemNode.getNodeType() == Node.ELEMENT_NODE){
+                    Element modelItemElement = (Element)modelItemNode;
+                    NodeList modelNameList = modelItemElement.getElementsByTagName("Name");
+                    
+                    Element modelNameElement = (Element)modelNameList.item(0);
+                    NodeList valuesList = modelNameElement.getChildNodes();
+                    
+                    String modelName = ((Node)valuesList.item(0)).getNodeValue();
+
+                	debug("nameString: "+ modelName);
+                	
+                    NodeList modelManufactList = modelItemElement.getElementsByTagName("Manufacturer");
+                    
+                    Element modelManufactElement = (Element)modelManufactList.item(0);
+                    NodeList values2List = modelManufactElement.getChildNodes();
+                    
+                    String modelManufact = ((Node)values2List.item(0)).getNodeValue();
+
+                	debug("nameString: "+ modelManufact);
+                	modelNamesList.add(modelManufact + "," + modelName);
+				}
+			}
+
+
+		} catch (Exception e) {
+			debug("exception thrown"+ e.getMessage());
+		}
+   }
+    
+	public void saveModel() {
+		debug("SaveModel====================================================");
+		File dir = new File("/sdcard/simplescan/config/");
+		if (!dir.exists()) {
+			dir.mkdirs();
+		}
+		File XMLfile = new File("/sdcard/simplescan/config/models.xml");
+		FileOutputStream XMLout;
+		DataOutputStream XMLdout = null;
+		try {
+			XMLout = new FileOutputStream(XMLfile);
+			XMLdout = new DataOutputStream(XMLout);
+			debug("Model data output stream created.");
+			XMLdout.writeBytes("<?xml version='1.0' encoding='UTF-8'?>\n");
+			XMLdout.writeBytes("<Models>\n");
+		} catch (FileNotFoundException e) {
+			debug("Exeption: " + e.getMessage());
+			Toast.makeText(SimpleScanActivity.this, "Failed to save file",
+					Toast.LENGTH_LONG).show();
+			return;
+		} catch (IOException e) {
+			debug("Count not write XML header.");
+		}
+
+		StringBuffer s = new StringBuffer();
+		for (int i = 1; i < modelNamesList.size(); i++) {
+			CSVRecord modelRecord = new CSVRecord(modelNamesList.get(i));
+			s.append("\t<Item>\n");
+			s.append("\t\t<Name>" + modelRecord.getField(1) + "</Name>\n");
+			s.append("\t\t<Manufacturer>" + modelRecord.getField(0) + "</Manufacturer>\n");
+			s.append("\t</Item>\n");			
+			debug("Write: "+ modelNamesList.get(i) +" to XML File");
+			try {
+				XMLdout.writeBytes(s.toString());
+			} catch (IOException e) {
+				// e.printStackTrace();
+				debug("Exception: " + e.getMessage());
+				Toast.makeText(SimpleScanActivity.this,
+						"Failed to write in the file", Toast.LENGTH_LONG)
+						.show();
+				return;
+			}
+			s.setLength(0);
+		}
+		try {
+			XMLdout.writeBytes("</Models>");
+		} catch (IOException e) {
+			debug("Exception: " + e.getMessage());
+		}
+	}
+	
+	public class modelItemSelectedListener implements OnItemSelectedListener {
+
+		public void onItemSelected(AdapterView<?> parent, View view, int pos,
+				long id) {
+			String modelItem = parent.getItemAtPosition(pos).toString();
+			if (!modelItem.equals(MANENTRY)) {
+				eModelNum.setText(modelItem);
+			} else {
+				eModelNum.setText("");
+			}
+			// Toast.makeText(parent.getContext(), "The planet is " +
+			// parent.getItemAtPosition(pos).toString(),
+			// Toast.LENGTH_LONG).show();
+		}
+
+        public void onNothingSelected(AdapterView parent) {
+          // Do nothing.
+        }
+    }
+	
+    public void addModel(String newModel) {
+    	boolean found = false;
+		for (int i = 0; i < modelNamesList.size(); i++) {
+			debug("loop : "+i);
+			if (newModel.equals(modelNamesList.get(i))) {
+				found = true;
+			}
+		}
+		if (!found) {
+			debug("Adding new: "+ newModel);
+			modelNamesList.add(eManufact.getText() + ","+ newModel);
+			modelArrayAdapter.add(newModel);
+			Toast.makeText(getApplicationContext(), newModel + " has been added to the list of models", Toast.LENGTH_LONG).show();
+			saveModel();
+		}
+    }
+
+	
+	public String getCSVField (String record, int fieldNum) {
+		String[] fields = record.split(",");
+		return fields[fieldNum];
+	}
+
+
 
 
 }
