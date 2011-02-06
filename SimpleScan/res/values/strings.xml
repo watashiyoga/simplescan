@@ -31,6 +31,7 @@
 
     <string name="manufact_prompt">Choose a manufacturer</string>
     <string name="model_prompt">Choose a model</string>
+    <string name="location_prompt">Choose a location</string>
 
 
 </resources>

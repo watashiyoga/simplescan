@@ -5,6 +5,8 @@
  * V0.21 04Feb2011 Added ability for spinner for manufacturer
  * V0.22 05Feb2011 Change to using ArrayList for manufacturer instead of plain array
  * V0.3  06Feb2011 Use arraylist for model num and link to manufact
+ * V0.4  06Feb2011 Add in a location field and do not clear old fields when item stored
+ * 					Inventory.xml format improved
  *   
  * Copyright (C) 2011 Simon Walters
  * 
@@ -84,9 +86,7 @@ import android.widget.Toast;
 import android.widget.AdapterView.OnItemSelectedListener;
 
 /**
- * This class provides a basic demonstration of how to write an Android
- * activity. Inside of its window, it places a single view: an EditText that
- * displays and edits some internal text.
+ * Main Activity
  */
 public class SimpleScanActivity extends Activity {
 
@@ -96,13 +96,14 @@ public class SimpleScanActivity extends Activity {
 	private EditText eSerialNum;
 	private EditText eModelNum;
 	private EditText eManufact;
+	private EditText eLocation;
 	private EditText eDescription;
 	static String barCode = "";
 	static private AlertDialog.Builder builder;
 	static private EditText fileName;
 	private DatabaseHelper mOpenHelper;
 	private static final String DATABASE_NAME = "simplescan.db";
-	private static final int DATABASE_VERSION = 1;
+	private static final int DATABASE_VERSION = 2;
 	private static final String MANENTRY = "[Manual Entry]";
 	private static ArrayList<String> manufactNamesList = new ArrayList<String>();
 	private static ArrayAdapter<String> manufactArrayAdapter;
@@ -111,6 +112,10 @@ public class SimpleScanActivity extends Activity {
 	private static ArrayList<String> modelNamesList = new ArrayList<String>();
 	private static ArrayAdapter<String> modelArrayAdapter;
 	private static Spinner modelSpinner;
+	
+	private static ArrayList<String> locationNamesList = new ArrayList<String>();
+	private static ArrayAdapter<String> locationArrayAdapter;
+	private static Spinner locationSpinner;
 
 	// static private FrameLayout contentPane;
 
@@ -122,15 +127,10 @@ public class SimpleScanActivity extends Activity {
 		// Inflate our UI from its XML layout description.
 		setContentView(R.layout.main);
 
-		// contentPane = (FrameLayout)findViewById(R.id.contentPane);
-
-		// Find the text editor view inside the layout, because we
-		// want to do various programmatic things with it.
-
 		eSerialNum = (EditText) findViewById(R.id.serialNum);
 		eModelNum = (EditText) findViewById(R.id.modelNum);
-
 		eManufact = (EditText) findViewById(R.id.manufact);
+		eLocation = (EditText) findViewById(R.id.location);
 		eDescription = (EditText) findViewById(R.id.description);
 		
 		//set up manufacturer spinner
@@ -170,28 +170,39 @@ public class SimpleScanActivity extends Activity {
 		
 		// end model
 		
+		//set up location type
+		loadLocation(); // loads manufactNames array with values from XML file
+
+		locationSpinner = (Spinner) findViewById(R.id.locationSpinner);
+		locationArrayAdapter = new ArrayAdapter(this, android.R.layout.simple_spinner_item);
+		locationArrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+		locationSpinner.setAdapter(locationArrayAdapter);
+		locationSpinner.setOnItemSelectedListener(new locationItemSelectedListener());
+		locationArrayAdapter.clear();
+		for (int i = 0; i < (locationNamesList.size()); i++) {
+			debug("loop list: "+i);
+			debug("nameString: "+ locationNamesList.get(i));
+			locationArrayAdapter.add(locationNamesList.get(i));
+		}
 		
-		
+		// end location
 		
 		((Button) findViewById(R.id.scan)).setOnClickListener(mScanListener);
 		((Button) findViewById(R.id.clear)).setOnClickListener(mClearListener);
 		((Button) findViewById(R.id.store)).setOnClickListener(mStoreListener);
-		
 
 		mOpenHelper = new DatabaseHelper(getBaseContext());
-
 	}
 
-	/**
-	 * Called when the activity is about to start interacting with the user.
-	 */
-	@Override
-	
 	protected void onPause() {
 		super.onPause();
 		debug("PAUSE OCCURRED---------------------------------------------------------");
 
 	}
+	
+	/**
+	 * Called when the activity is about to start interacting with the user.
+	 */
 	protected void onResume() {
 		super.onResume();
 		debug("RESUME OCCURRED---------------------------------------------------------");
@@ -233,10 +244,6 @@ public class SimpleScanActivity extends Activity {
 	public boolean onPrepareOptionsMenu(Menu menu) {
 		super.onPrepareOptionsMenu(menu);
 
-		// Before showing the menu, we need to decide whether the clear
-		// item is enabled depending on whether there is text to clear.
-		// menu.findItem(CLEAR_ID).setVisible(mEditor.getText().length() > 0);
-
 		return true;
 	}
 
@@ -247,45 +254,10 @@ public class SimpleScanActivity extends Activity {
 	public boolean onOptionsItemSelected(MenuItem item) {
 		if (item.getItemId() == QUIT_ID) {
 			finish();
-			// switch (item.getItemId()) {
-			// case SAVE_ID:
-			// setContentView(R.layout.main);
-			// LayoutInflater li;
-			// contentPane.removeAllViews();
-			// li =
-			// (LayoutInflater)this.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-			// contentPane.addView( li.inflate(R.layout.main, null) );
-			 /*
-			builder = new AlertDialog.Builder(this);
-			builder.setMessage("Please type in the filename?").setCancelable(
-					false).setPositiveButton("Save",
-					new DialogInterface.OnClickListener() {
-						public void onClick(DialogInterface dialog, int id) {
-							saveFile(id);
-						}
-					}).setNegativeButton("Cancel",
-					new DialogInterface.OnClickListener() {
-						public void onClick(DialogInterface dialog, int id) {
-							dialog.cancel();
-						}
-					});
-			AlertDialog alert = builder.create();
-			// Set an EditText view to get user input
-			fileName = new EditText(this);
-			alert.setView(fileName);
-			alert.show();
-			*/
 		} else if (item.getItemId() == EXPORT_ID) {
-			saveInventoryKML();
+			saveInventoryXML();
+			loadInventoryXML();
 		}
-
-		// return true;
-
-		// case CLEAR_ID:
-		// mEditor.setText("");
-		// return true;
-
-		// }
 
 		return super.onOptionsItemSelected(item);
 	}
@@ -308,16 +280,11 @@ public class SimpleScanActivity extends Activity {
 	OnClickListener mClearListener = new OnClickListener() {
 		public void onClick(View v) {
 
-			// final Intent DBIntent = new
-			// Intent(android.content.Intent.ACTION_SEND);
-			// DBIntent.putExtra(Intent.EXTRA_STREAM, "test");
-			// DBIntent.setType("*/*");
-			// DBIntent.setPackage("com.dropbox.android");
-			// startActivity(DBIntent);
 			eSerialNum.setText("");
 			eModelNum.setText("");
 			eManufact.setText("");
 			eDescription.setText("");
+			eLocation.setText("");
 
 		}
 	};
@@ -368,9 +335,12 @@ public class SimpleScanActivity extends Activity {
 		values.put("manufact", eManufact.getText().toString());
 		values.put("description", eDescription.getText().toString());
 
+
 		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 		Date date = new Date();
 		values.put("time", dateFormat.format(date));
+		
+		values.put("location", eLocation.getText().toString());
 
 		try {
 			db.insertOrThrow("inventory", null, values);
@@ -381,6 +351,7 @@ public class SimpleScanActivity extends Activity {
 		
 		addManufact(eManufact.getText().toString());
 		addModel(eModelNum.getText().toString());
+		addLocation(eLocation.getText().toString());
 		/*
 		File dir = new File("/sdcard/simplescan/");
 		if (!dir.exists()) {
@@ -414,9 +385,9 @@ public class SimpleScanActivity extends Activity {
 		}
 		*/
 		eSerialNum.setText("");
-		eModelNum.setText("");
-		eManufact.setText("");
-		eDescription.setText("");
+//		eModelNum.setText("");
+//		eManufact.setText("");
+//		eDescription.setText("");
 	}
 
 	public void debug(String s) {
@@ -470,16 +441,13 @@ public class SimpleScanActivity extends Activity {
 
 		@Override
 		public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-			Log
-					.w("SW", "Upgrading database from version " + oldVersion
-							+ " to " + newVersion
-							+ ", which will destroy all old data");
-			db.execSQL("DROP TABLE IF EXISTS inventory");
-			onCreate(db);
+			Log.d("SW","Upgrading database from version " + oldVersion + " to " + newVersion);
+			db.execSQL("ALTER TABLE inventory ADD location TEXT");
+//			onCreate(db);
 		}
 	}
 
-	public void saveInventoryKML() {
+	public void saveInventoryXML() {
 		SQLiteDatabase db = mOpenHelper.getReadableDatabase();
 		Cursor c = db.rawQuery("select * from inventory", null);
 		File dir = new File("/sdcard/simplescan/");
@@ -508,14 +476,22 @@ public class SimpleScanActivity extends Activity {
 			StringBuffer s = new StringBuffer();
 			for (int i = 0; i < c.getCount(); i++) {
 				c.moveToNext();
-				s.append("<SerialNum>" + c.getString(1) + "</SerialNum>\n");
-				s.append("<ModelNum>" + c.getString(2) + "</ModelNum>\n");
-				s.append("<Manufacturer>" + c.getString(3) + "</Manufacturer>\n");
-				s.append("<Description>" + c.getString(4) + "</Description>\n");
+				s.append("\t<Item>\n");
+				s.append("\t\t<SerialNum>" + c.getString(1) + "</SerialNum>\n");
+				s.append("\t\t<ModelNum>" + c.getString(2) + "</ModelNum>\n");
+				s.append("\t\t<Manufacturer>" + c.getString(3) + "</Manufacturer>\n");
+				s.append("\t\t<Location>" + c.getString(6) + "</Location>\n");
+				s.append("\t\t<Description>" + c.getString(4) + "</Description>\n");
+				s.append("\t\t<RecordedOn>" + c.getString(5) + "</RecordedOn>\n");
+				s.append("\t</Item>\n");
 
-				// debug(s.toString());
+				debug(s.toString());
 				try {
 					XMLdout.writeBytes(s.toString());
+					Toast.makeText(SimpleScanActivity.this,
+							"Inventory saved", Toast.LENGTH_LONG)
+							.show();
+
 				} catch (IOException e) {
 					// e.printStackTrace();
 					debug("Exception: " + e.getMessage());
@@ -535,159 +511,206 @@ public class SimpleScanActivity extends Activity {
 		db.close();
 	}
 	
-    public void loadManufact() {
+	//load Inventory
+    public void loadInventoryXML() {
 		InputStream in;
 		DocumentBuilder builder;
 		
 		try {
-			File testForFile = new File("/sdcard/simplescan/config/manufacturers.xml");
-			if (!testForFile.exists()) {
-				debug("manufact file does not exist");
-//				String[] manufactNamesInit = new String[] {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
-//				manufactNames = (String[]) resizeArray(manufactNames,manufactNamesInit.length);
-//				manufactNames = manufactNamesInit;
-				manufactNamesList.clear();
-				String[] initManufact = {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
-				for (int i = 0; i < (initManufact.length); i++) {
-					manufactNamesList.add(initManufact[i]);
-				}
-				saveManufact();
-				return;
-			}
-			manufactNamesList.clear();
-			String filename = "/sdcard/simplescan/config/manufacturers.xml";
+			String filename = "/sdcard/simplescan/inventory.xml";
 			in = new FileInputStream(filename);
 			debug("File opened: " + filename);
 			builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
 			debug("Document builder ok.");
 			Document doc=builder.parse(in, null);
 			debug("XML parse ok.");
-			NodeList manufactNameNodeList = doc.getElementsByTagName("Name");
-			int numOfNodes = manufactNameNodeList.getLength();
+			NodeList itemNodeList = doc.getElementsByTagName("Item");
+			int numOfNodes = itemNodeList.getLength();
 			debug ("Num of nodes: "+ numOfNodes);
-//			manufactNames = (String[]) resizeArray(manufactNames,1+numOfNodes);
-			manufactNamesList.add(MANENTRY);
 
 			for (int i = 0; i < (numOfNodes); i++) {
 				debug("loop : "+i);
-//				csv = placemarks.item(i).getFirstChild().getNodeValue();
-//
-   				String manufactNameString = manufactNameNodeList.item(i).getFirstChild().getNodeValue();
-					
-				debug("nameString: "+ manufactNameString);
-//				manufactNames[i+1] = manufactNameString;
-				manufactNamesList.add(manufactNameString);
-
+                Node itemNode = itemNodeList.item(i);
+                Element itemElement = (Element) itemNodeList.item(i);
+                
+                Element manufactElement = (Element) itemElement.getElementsByTagName("Manufacturer").item(0);
+                String manufactValue = manufactElement.getFirstChild().getNodeValue();
+                debug("nameString: "+ manufactValue);
+                
+                Element modelElement = (Element) itemElement.getElementsByTagName("ModelNum").item(0);
+                String modelValue = modelElement.getFirstChild().getNodeValue();
+                debug("nameString: "+ modelValue);
 			}
-//			manufactNames[0] = MANENTRY;
 
 
 		} catch (Exception e) {
 			debug("exception thrown"+ e.getMessage());
 		}
    }
-    
-	public void saveManufact() {
-		debug("SaveMaufact====================================================");
-		File dir = new File("/sdcard/simplescan/config/");
-		if (!dir.exists()) {
-			dir.mkdirs();
-		}
-		File XMLfile = new File("/sdcard/simplescan/config/manufacturers.xml");
-		FileOutputStream XMLout;
-		DataOutputStream XMLdout = null;
-		try {
-			XMLout = new FileOutputStream(XMLfile);
-			XMLdout = new DataOutputStream(XMLout);
-			debug("Manufacturers data output stream created.");
-			XMLdout.writeBytes("<?xml version='1.0' encoding='UTF-8'?>\n");
-			XMLdout.writeBytes("<Manufacturers>\n");
-		} catch (FileNotFoundException e) {
-			debug("Exeption: " + e.getMessage());
-			Toast.makeText(SimpleScanActivity.this, "Failed to save file",
-					Toast.LENGTH_LONG).show();
-			return;
-		} catch (IOException e) {
-			debug("Count not write XML header.");
-		}
 
-		StringBuffer s = new StringBuffer();
-		for (int i = 1; i < manufactNamesList.size(); i++) {
-			s.append("\t<Name>" + manufactNamesList.get(i) + "</Name>\n");
-			debug("Write: "+ manufactNamesList.get(i) +" to XML File");
+    
+	// manufacturer ====================================
+	   public void loadManufact() {
+			InputStream in;
+			DocumentBuilder builder;
+			
 			try {
-				XMLdout.writeBytes(s.toString());
-			} catch (IOException e) {
-				// e.printStackTrace();
-				debug("Exception: " + e.getMessage());
-				Toast.makeText(SimpleScanActivity.this,
-						"Failed to write in the file", Toast.LENGTH_LONG)
-						.show();
-				return;
-			}
-			s.setLength(0);
-		}
-		try {
-			XMLdout.writeBytes("</Manufacturers>");
-		} catch (IOException e) {
-			debug("Exception: " + e.getMessage());
-		}
-	}
-
-
-	public class manufactItemSelectedListener implements OnItemSelectedListener {
-
-		public void onItemSelected(AdapterView<?> parent, View view, int pos,
-				long id) {
-			String manufactItem = parent.getItemAtPosition(pos).toString();
-			if (!manufactItem.equals(MANENTRY)) {
-				eManufact.setText(manufactItem);
-			    modelArrayAdapter.clear();
-			    modelArrayAdapter.add(MANENTRY);
-				for (int i = 0; i < (modelNamesList.size()); i++) {
-					debug("loop list: "+i);
-					debug("nameString: "+ modelNamesList.get(i));
-					if (manufactItem.equals(getCSVField(modelNamesList.get(i),0))) {
-						modelArrayAdapter.add(getCSVField(modelNamesList.get(i),1));
+				File testForFile = new File("/sdcard/simplescan/config/manufacturers.xml");
+				if (!testForFile.exists()) {
+					debug("manufact file does not exist");
+//					String[] manufactNamesInit = new String[] {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
+//					manufactNames = (String[]) resizeArray(manufactNames,manufactNamesInit.length);
+//					manufactNames = manufactNamesInit;
+					manufactNamesList.clear();
+					String[] initManufact = {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
+					for (int i = 0; i < (initManufact.length); i++) {
+						manufactNamesList.add(initManufact[i]);
 					}
+					saveManufact();
+					return;
 				}
+				manufactNamesList.clear();
+				String filename = "/sdcard/simplescan/config/manufacturers.xml";
+				in = new FileInputStream(filename);
+				debug("File opened: " + filename);
+				builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+				debug("Document builder ok.");
+				Document doc=builder.parse(in, null);
+				debug("XML parse ok.");
+				NodeList manufactNameNodeList = doc.getElementsByTagName("Name");
+				int numOfNodes = manufactNameNodeList.getLength();
+				debug ("Num of nodes: "+ numOfNodes);
+//				manufactNames = (String[]) resizeArray(manufactNames,1+numOfNodes);
+				manufactNamesList.add(MANENTRY);
 
-				modelSpinner.setSelection(0);
-//				eModelNum.setText("");
+				for (int i = 0; i < (numOfNodes); i++) {
+					debug("loop : "+i);
+//					csv = placemarks.item(i).getFirstChild().getNodeValue();
+	//
+	   				String manufactNameString = manufactNameNodeList.item(i).getFirstChild().getNodeValue();
+						
+					debug("nameString: "+ manufactNameString);
+//					manufactNames[i+1] = manufactNameString;
+					manufactNamesList.add(manufactNameString);
+
+				}
+//				manufactNames[0] = MANENTRY;
+
+
+			} catch (Exception e) {
+				debug("exception thrown"+ e.getMessage());
 			}
-			// Toast.makeText(parent.getContext(), "The planet is " +
-			// parent.getItemAtPosition(pos).toString(),
-			// Toast.LENGTH_LONG).show();
-		}
-
-        public void onNothingSelected(AdapterView parent) {
-          // Do nothing.
-        }
-    }
-    
-    public void addManufact(String newManufact) {
-    	boolean found = false;
-		for (int i = 0; i < manufactNamesList.size(); i++) {
-			debug("loop : "+i);
-//			csv = placemarks.item(i).getFirstChild().getNodeValue();
-//		
-			if (newManufact.equals(manufactNamesList.get(i))) {
-				found = true;
+	   }
+	    
+		public void saveManufact() {
+			debug("SaveMaufact====================================================");
+			File dir = new File("/sdcard/simplescan/config/");
+			if (!dir.exists()) {
+				dir.mkdirs();
 			}
-				
-		}
-		if (!found) {
-			debug("Adding new: "+ newManufact);
-			manufactNamesList.add(newManufact);
-			manufactArrayAdapter.add(newManufact);
-			Toast.makeText(getApplicationContext(), newManufact + " has been added to the list of manufacturers", Toast.LENGTH_LONG).show();
-			saveManufact();
-		}
-		
+			File XMLfile = new File("/sdcard/simplescan/config/manufacturers.xml");
+			FileOutputStream XMLout;
+			DataOutputStream XMLdout = null;
+			try {
+				XMLout = new FileOutputStream(XMLfile);
+				XMLdout = new DataOutputStream(XMLout);
+				debug("Manufacturers data output stream created.");
+				XMLdout.writeBytes("<?xml version='1.0' encoding='UTF-8'?>\n");
+				XMLdout.writeBytes("<Manufacturers>\n");
+			} catch (FileNotFoundException e) {
+				debug("Exeption: " + e.getMessage());
+				Toast.makeText(SimpleScanActivity.this, "Failed to save file",
+						Toast.LENGTH_LONG).show();
+				return;
+			} catch (IOException e) {
+				debug("Count not write XML header.");
+			}
 
-    	
+			StringBuffer s = new StringBuffer();
+			for (int i = 1; i < manufactNamesList.size(); i++) {
+				s.append("\t<Name>" + manufactNamesList.get(i) + "</Name>\n");
+				debug("Write: "+ manufactNamesList.get(i) +" to XML File");
+				try {
+					XMLdout.writeBytes(s.toString());
+				} catch (IOException e) {
+					// e.printStackTrace();
+					debug("Exception: " + e.getMessage());
+					Toast.makeText(SimpleScanActivity.this,
+							"Failed to write in the file", Toast.LENGTH_LONG)
+							.show();
+					return;
+				}
+				s.setLength(0);
+			}
+			try {
+				XMLdout.writeBytes("</Manufacturers>");
+			} catch (IOException e) {
+				debug("Exception: " + e.getMessage());
+			}
+		}
+
+
+		public class manufactItemSelectedListener implements OnItemSelectedListener {
+
+            public void onItemSelected(AdapterView<?> parent, View view, int pos,
+                    long id) {
+            String manufactItem = parent.getItemAtPosition(pos).toString();
+            if (!manufactItem.equals(MANENTRY)) {
+                    eManufact.setText(manufactItem);
+                modelArrayAdapter.clear();
+                modelArrayAdapter.add(MANENTRY);
+                    for (int i = 0; i < (modelNamesList.size()); i++) {
+                            debug("loop list: "+i);
+                            debug("nameString: "+ modelNamesList.get(i));
+                            if (manufactItem.equals(getCSVField(modelNamesList.get(i),0))) {
+                                    modelArrayAdapter.add(getCSVField(modelNamesList.get(i),1));
+                            }
+                    }
+
+                    modelSpinner.setSelection(0);
+
+            } else {
+                eManufact.setText("");
+                modelArrayAdapter.clear();
+                modelArrayAdapter.add(MANENTRY);
+                modelSpinner.setSelection(0);
+            }
+            // Toast.makeText(parent.getContext(), "The planet is " +
+            // parent.getItemAtPosition(pos).toString(),
+            // Toast.LENGTH_LONG).show();
     }
-    
+
+			
+	        public void onNothingSelected(AdapterView parent) {
+	          // Do nothing.
+	        }
+	    }
+	    
+	    public void addManufact(String newManufact) {
+	    	boolean found = false;
+			for (int i = 0; i < manufactNamesList.size(); i++) {
+				debug("loop : "+i);
+//				csv = placemarks.item(i).getFirstChild().getNodeValue();
+//			
+				if (newManufact.equals(manufactNamesList.get(i))) {
+					found = true;
+				}
+					
+			}
+			if (!found) {
+				debug("Adding new: "+ newManufact);
+				manufactNamesList.add(newManufact);
+				manufactArrayAdapter.add(newManufact);
+				Toast.makeText(getApplicationContext(), newManufact + " has been added to the list of manufacturers", Toast.LENGTH_LONG).show();
+				saveManufact();
+			}
+			
+
+	    	
+	    }
+	 
+	
+    // model ====================================================================
     public void loadModel() {
 		InputStream in;
 		DocumentBuilder builder;
@@ -700,7 +723,7 @@ public class SimpleScanActivity extends Activity {
 //				manufactNames = (String[]) resizeArray(manufactNames,manufactNamesInit.length);
 //				manufactNames = manufactNamesInit;
 				modelNamesList.clear();
-				String[] initModel = {"None,"+MANENTRY,"Epson,EMP-S3","ASUS,EEPC 701","ASUS,1001"};
+				String[] initModel = {"None,"+MANENTRY,"Acer,Aspire 5536","ASUS,EEPC 701","ASUS,1001"};
 				for (int i = 0; i < (initModel.length); i++) {
 					modelNamesList.add(initModel[i]);
 				}
@@ -829,7 +852,7 @@ public class SimpleScanActivity extends Activity {
     	boolean found = false;
 		for (int i = 0; i < modelNamesList.size(); i++) {
 			debug("loop : "+i);
-			if (newModel.equals(modelNamesList.get(i))) {
+			if (newModel.equals(getCSVField(modelNamesList.get(i),1))) {
 				found = true;
 			}
 		}
@@ -840,6 +863,152 @@ public class SimpleScanActivity extends Activity {
 			Toast.makeText(getApplicationContext(), newModel + " has been added to the list of models", Toast.LENGTH_LONG).show();
 			saveModel();
 		}
+    }
+
+	// location ===========================================================================
+    public void loadLocation() {
+		InputStream in;
+		DocumentBuilder builder;
+		
+		try {
+			File testForFile = new File("/sdcard/simplescan/config/locations.xml");
+			if (!testForFile.exists()) {
+				debug("location file does not exist");
+//				String[] manufactNamesInit = new String[] {MANENTRY,"Acer","ASUS","Brother","Dell","Fujitsu","Kyocera","Lenovo","Epson","HP","Promethean","PARS","Philips","RM","Samsung","Sanyo","Smart","Stone","Toshiba"};
+//				manufactNames = (String[]) resizeArray(manufactNames,manufactNamesInit.length);
+//				manufactNames = manufactNamesInit;
+				locationNamesList.clear();
+				String[] initLocation = {MANENTRY,"Hall","Staffroom","Server Room"};
+				for (int i = 0; i < (initLocation.length); i++) {
+					locationNamesList.add(initLocation[i]);
+				}
+				saveLocation();
+				return;
+			}
+			locationNamesList.clear();
+			String filename = "/sdcard/simplescan/config/locations.xml";
+			in = new FileInputStream(filename);
+			debug("File opened: " + filename);
+			builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+			debug("Document builder ok.");
+			Document doc=builder.parse(in, null);
+			debug("XML parse ok.");
+			NodeList locationNameNodeList = doc.getElementsByTagName("Name");
+			int numOfNodes = locationNameNodeList.getLength();
+			debug ("Num of nodes: "+ numOfNodes);
+//			manufactNames = (String[]) resizeArray(manufactNames,1+numOfNodes);
+			locationNamesList.add(MANENTRY);
+
+			for (int i = 0; i < (numOfNodes); i++) {
+				debug("loop : "+i);
+//				csv = placemarks.item(i).getFirstChild().getNodeValue();
+//
+   				String locationNameString = locationNameNodeList.item(i).getFirstChild().getNodeValue();
+					
+				debug("nameString: "+locationNameString);
+//				manufactNames[i+1] = manufactNameString;
+				locationNamesList.add(locationNameString);
+
+			}
+//			manufactNames[0] = MANENTRY;
+
+
+		} catch (Exception e) {
+			debug("exception thrown"+ e.getMessage());
+		}
+   }
+    
+	public void saveLocation() {
+		debug("Savelocation====================================================");
+		File dir = new File("/sdcard/simplescan/config/");
+		if (!dir.exists()) {
+			dir.mkdirs();
+		}
+		File XMLfile = new File("/sdcard/simplescan/config/locations.xml");
+		FileOutputStream XMLout;
+		DataOutputStream XMLdout = null;
+		try {
+			XMLout = new FileOutputStream(XMLfile);
+			XMLdout = new DataOutputStream(XMLout);
+			debug("location data output stream created.");
+			XMLdout.writeBytes("<?xml version='1.0' encoding='UTF-8'?>\n");
+			XMLdout.writeBytes("<Locations>\n");
+		} catch (FileNotFoundException e) {
+			debug("Exeption: " + e.getMessage());
+			Toast.makeText(SimpleScanActivity.this, "Failed to save file",
+					Toast.LENGTH_LONG).show();
+			return;
+		} catch (IOException e) {
+			debug("Count not write XML header.");
+		}
+
+		StringBuffer s = new StringBuffer();
+		for (int i = 1; i < locationNamesList.size(); i++) {
+			s.append("\t<Name>" + locationNamesList.get(i) + "</Name>\n");
+			debug("Write: "+ locationNamesList.get(i) +" to XML File");
+			try {
+				XMLdout.writeBytes(s.toString());
+			} catch (IOException e) {
+				// e.printStackTrace();
+				debug("Exception: " + e.getMessage());
+				Toast.makeText(SimpleScanActivity.this,
+						"Failed to write in the file", Toast.LENGTH_LONG)
+						.show();
+				return;
+			}
+			s.setLength(0);
+		}
+		try {
+			XMLdout.writeBytes("</Locations>");
+		} catch (IOException e) {
+			debug("Exception: " + e.getMessage());
+		}
+	}
+
+
+	public class locationItemSelectedListener implements OnItemSelectedListener {
+
+		public void onItemSelected(AdapterView<?> parent, View view, int pos,
+				long id) {
+			String locationItem = parent.getItemAtPosition(pos).toString();
+			if (!locationItem.equals(MANENTRY)) {
+				eLocation.setText(locationItem);
+			} else {
+				eModelNum.setText("");
+			}
+			// Toast.makeText(parent.getContext(), "The planet is " +
+			// parent.getItemAtPosition(pos).toString(),
+			// Toast.LENGTH_LONG).show();
+		}
+
+
+
+        public void onNothingSelected(AdapterView parent) {
+          // Do nothing.
+        }
+    }
+    
+    public void addLocation(String newLocation) {
+    	boolean found = false;
+		for (int i = 0; i < locationNamesList.size(); i++) {
+			debug("loop : "+i);
+//			csv = placemarks.item(i).getFirstChild().getNodeValue();
+//		
+			if (newLocation.equals(locationNamesList.get(i))) {
+				found = true;
+			}
+				
+		}
+		if (!found) {
+			debug("Adding new: "+ newLocation);
+			locationNamesList.add(newLocation);
+			locationArrayAdapter.add(newLocation);
+			Toast.makeText(getApplicationContext(), newLocation + " has been added to the list of locations", Toast.LENGTH_LONG).show();
+			saveLocation();
+		}
+		
+
+    	
     }
 
 	
