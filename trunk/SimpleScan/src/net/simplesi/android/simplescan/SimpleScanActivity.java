@@ -7,6 +7,7 @@
  * V0.3  06Feb2011 Use arraylist for model num and link to manufact
  * V0.4  06Feb2011 Add in a location field and do not clear old fields when item stored
  * 					Inventory.xml format improved
+ * V0.41 07Feb2011 add import from inventory.xml function and code tidy up
  *   
  * Copyright (C) 2011 Simon Walters
  * 
@@ -92,6 +93,7 @@ public class SimpleScanActivity extends Activity {
 
 	static final private int QUIT_ID = Menu.FIRST;
 	static final private int EXPORT_ID = Menu.FIRST + 1;
+	static final private int IMPORT_ID = Menu.FIRST + 2;
 
 	private EditText eSerialNum;
 	private EditText eModelNum;
@@ -233,6 +235,7 @@ public class SimpleScanActivity extends Activity {
 		menu.add(0, QUIT_ID, 0, R.string.quit).setShortcut('0', 'q');
 
 		menu.add(0, EXPORT_ID, 0, R.string.export).setShortcut('1', 'e');
+		menu.add(0, IMPORT_ID, 0, "Import Inventory").setShortcut('2', 'i');
 
 		return true;
 	}
@@ -256,6 +259,7 @@ public class SimpleScanActivity extends Activity {
 			finish();
 		} else if (item.getItemId() == EXPORT_ID) {
 			saveInventoryXML();
+		} else if (item.getItemId() == IMPORT_ID) {
 			loadInventoryXML();
 		}
 
@@ -441,9 +445,15 @@ public class SimpleScanActivity extends Activity {
 
 		@Override
 		public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-			Log.d("SW","Upgrading database from version " + oldVersion + " to " + newVersion);
-			db.execSQL("ALTER TABLE inventory ADD location TEXT");
-//			onCreate(db);
+			if (oldVersion < 2) {
+				Log.d("SW","Upgrading database from version " + oldVersion + " to " + newVersion);
+				db.execSQL("ALTER TABLE inventory ADD location TEXT");
+			}
+			if (oldVersion < 3) {
+				Log.d("SW","Upgrading database from version " + oldVersion + " to " + newVersion);
+				db.execSQL("ALTER TABLE inventory ADD other TEXT");
+			}
+
 		}
 	}
 
@@ -488,10 +498,6 @@ public class SimpleScanActivity extends Activity {
 				debug(s.toString());
 				try {
 					XMLdout.writeBytes(s.toString());
-					Toast.makeText(SimpleScanActivity.this,
-							"Inventory saved", Toast.LENGTH_LONG)
-							.show();
-
 				} catch (IOException e) {
 					// e.printStackTrace();
 					debug("Exception: " + e.getMessage());
@@ -509,12 +515,17 @@ public class SimpleScanActivity extends Activity {
 			}
 		}
 		db.close();
+		Toast.makeText(SimpleScanActivity.this, c.getCount() + " inventory items saved to /sdcard/simplescan/inventory.xml",Toast.LENGTH_LONG).show();
+
 	}
 	
 	//load Inventory
     public void loadInventoryXML() {
 		InputStream in;
 		DocumentBuilder builder;
+		SQLiteDatabase db = mOpenHelper.getWritableDatabase();
+		ContentValues values;
+		values = new ContentValues();
 		
 		try {
 			String filename = "/sdcard/simplescan/inventory.xml";
@@ -527,25 +538,32 @@ public class SimpleScanActivity extends Activity {
 			NodeList itemNodeList = doc.getElementsByTagName("Item");
 			int numOfNodes = itemNodeList.getLength();
 			debug ("Num of nodes: "+ numOfNodes);
+			db.execSQL("DELETE FROM inventory");
+			debug("Inventory database emptied");
 
 			for (int i = 0; i < (numOfNodes); i++) {
 				debug("loop : "+i);
                 Node itemNode = itemNodeList.item(i);
                 Element itemElement = (Element) itemNodeList.item(i);
                 
-                Element manufactElement = (Element) itemElement.getElementsByTagName("Manufacturer").item(0);
-                String manufactValue = manufactElement.getFirstChild().getNodeValue();
-                debug("nameString: "+ manufactValue);
+                values.put("serialnum", getNodeValue(itemElement, "SerialNum"));
+                values.put("manufact",getNodeValue(itemElement, "Manufacturer"));
+                values.put("modelnum",getNodeValue(itemElement, "ModelNum"));
+                values.put("location",getNodeValue(itemElement, "Location"));                
+                values.put("description",getNodeValue(itemElement, "Description"));
+                values.put("time",getNodeValue(itemElement, "RecordedOn"));    
                 
-                Element modelElement = (Element) itemElement.getElementsByTagName("ModelNum").item(0);
-                String modelValue = modelElement.getFirstChild().getNodeValue();
-                debug("nameString: "+ modelValue);
-			}
-
+       			db.insertOrThrow("inventory", null, values);
+             
+ 			}
+			db.close();
+			Toast.makeText(SimpleScanActivity.this, numOfNodes +" inventory items imported from /sdcard/simplescna/inventory.xml",
+					Toast.LENGTH_LONG).show();
 
 		} catch (Exception e) {
 			debug("exception thrown"+ e.getMessage());
 		}
+
    }
 
     
@@ -803,10 +821,9 @@ public class SimpleScanActivity extends Activity {
 
 		StringBuffer s = new StringBuffer();
 		for (int i = 1; i < modelNamesList.size(); i++) {
-			CSVRecord modelRecord = new CSVRecord(modelNamesList.get(i));
 			s.append("\t<Item>\n");
-			s.append("\t\t<Name>" + modelRecord.getField(1) + "</Name>\n");
-			s.append("\t\t<Manufacturer>" + modelRecord.getField(0) + "</Manufacturer>\n");
+			s.append("\t\t<Name>" + getCSVField(modelNamesList.get(i),1) + "</Name>\n");
+			s.append("\t\t<Manufacturer>" + getCSVField(modelNamesList.get(i),0) + "</Manufacturer>\n");
 			s.append("\t</Item>\n");			
 			debug("Write: "+ modelNamesList.get(i) +" to XML File");
 			try {
@@ -1017,7 +1034,21 @@ public class SimpleScanActivity extends Activity {
 		return fields[fieldNum];
 	}
 
+	public String getNodeValue (Element itemElement, String tagName) {
+		String nodeValue;
 
+		Element nodeElement = (Element) itemElement.getElementsByTagName(tagName).item(0);
+	    if (nodeElement.hasChildNodes()) {
+	    	nodeValue = nodeElement.getFirstChild().getNodeValue();
+	    	if (nodeValue.equals("null")) {
+	    		nodeValue = "";
+	    	}
+	    } else {
+	    	nodeValue ="";
+	    }
+	    debug("nameString: "+nodeValue);
+	    return nodeValue;
+	}
 
 
 }
