@@ -1,0 +1,1 @@
+This app is designed to collect serial number bar codes of school IT equipment for the purposes of maintaining an inventory
